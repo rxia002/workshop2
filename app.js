@@ -1,71 +1,64 @@
+// 先确保顶部依赖正确引入（之前的代码可能漏了，补上）
 const express = require('express');
 const app = express();
 const http = require('http').createServer(app);
 const io = require('socket.io')(http);
-// 新增：引入内置的 child_process 模块（无需安装依赖）
-const { exec } = require('child_process');
+const path = require('path');
 
-const PORT = 3000;
+// 托管 public 文件夹（前端文件目录，必须有）
+app.use(express.static(path.join(__dirname, 'public')));
 
-// 告诉 express 静态文件在 public 文件夹
-app.use(express.static(__dirname + '/public'));
-
-// 存储所有玩家信息
+// 全局存储所有玩家（必须在 io.on 外面定义）
 let players = {};
 
+// 监听玩家连接（核心逻辑修改）
 io.on('connection', (socket) => {
   console.log('new player:', socket.id);
 
-  // 初始化玩家数据
-  players[socket.id] = {
-    x: 0,
-    y: 0,
-    color: Math.floor(Math.random() * 360),  // HSB 色相
-    size: 30 + Math.random() * 20            // 生物大小略有不同
-  };
+  // 1. 关键修改：监听前端发送的 "newPlayer" 事件（接收前端的颜色、大小、初始位置）
+  socket.on('newPlayer', (playerData) => {
+    // 用前端传的玩家数据初始化（而非后端固定 x:0,y:0），和前端保持一致
+    players[socket.id] = {
+      x: playerData.x,       // 前端传的初始 X（画布中间）
+      y: playerData.y,       // 前端传的初始 Y（画布中间）
+      size: playerData.size, // 前端传的随机大小（20~30）
+      color: playerData.color// 前端传的随机颜色（0~360）
+    };
 
-  // 发送所有玩家信息给新玩家
-  socket.emit('currentPlayers', players);
+    // 2. 关键修改：发送 "allPlayers" 事件（前端监听的是这个名），回传所有玩家数据
+    socket.emit('allPlayers', players);
 
-  // 广播新玩家加入
-  socket.broadcast.emit('newPlayer', {id: socket.id, data: players[socket.id]});
+    // 广播新玩家加入（事件名 "newPlayerJoined" 要和前端监听的一致，前端已处理）
+    socket.broadcast.emit('newPlayerJoined', {
+      id: socket.id,
+      data: players[socket.id]
+    });
+  });
 
-  // 接收玩家位置更新
-  socket.on('update', (data) => {
-    if(players[socket.id]){
+  // 接收玩家位置更新（事件名 "playerPosition" 要和前端发送的一致，前端发的是这个）
+  socket.on('playerPosition', (data) => {
+    if (players[socket.id]) {
       players[socket.id].x = data.x;
       players[socket.id].y = data.y;
-      io.emit('playersUpdate', players); // 同步给所有人
+      // 同步给所有玩家（事件名 "playerMoved" 要和前端监听的一致，前端已处理）
+      io.emit('playerMoved', {
+        id: socket.id,
+        x: data.x,
+        y: data.y
+      });
     }
   });
 
-  // 玩家断开
+  // 玩家断开连接（事件名 "playerLeft" 和前端一致，前端已处理）
   socket.on('disconnect', () => {
     console.log('player leave:', socket.id);
     delete players[socket.id];
-    io.emit('playerDisconnected', socket.id);
+    io.emit('playerLeft', socket.id);
   });
 });
 
-http.listen(PORT, () => {
-  const url = `http://localhost:${PORT}`;
-  console.log(`服务器启动 ${url}`);
-
-  // 核心新增：自动打开浏览器（兼容 Windows/Mac/Linux）
-  let openCommand;
-  // 判断系统类型，执行对应打开命令
-  if (process.platform === 'win32') {
-    openCommand = `start ${url}`; // Windows 系统
-  } else if (process.platform === 'darwin') {
-    openCommand = `open ${url}`; // Mac 系统
-  } else {
-    openCommand = `xdg-open ${url}`; // Linux 系统
-  }
-
-  // 执行打开浏览器的命令，捕获错误避免程序崩溃
-  exec(openCommand, (err) => {
-    if (err) {
-      console.log('自动打开浏览器失败，请手动访问：', url);
-    }
-  });
+// 监听端口（必须用 http.listen，且用 Render 的环境变量端口）
+const port = process.env.PORT || 3000;
+http.listen(port, () => {
+  console.log(`服务运行在端口 ${port}`);
 });
