@@ -1,28 +1,18 @@
-// ---------------------------
-// 外星生物 + 漂浮发光食物（彩色，多人版）- 陀螺仪控制（修复版）
-// 关键修复：
-// 1) iOS 必须用户手势后 requestPermission
-// 2) 不要在这里重写 sendPosition（否则会把 client.js 的正确版本覆盖掉）
-// ---------------------------
-
 let foods = [];
 let maxFoods = 30;
 let foodCount = 0;
 
-// ===== 陀螺仪全局变量 =====
-let gyroBeta = 0;   // 前后倾斜
-let gyroGamma = 0;  // 左右倾斜
+let gyroBeta = 0; 
+let gyroGamma = 0;
 let smoothFactor = 0.15;
 
 let lastSendTime = 0;
 const SEND_INTERVAL = 30;
 
-// 权限/支持状态
 let gyroSupported = false;
 let needsIOSPermission = false;
 let gyroEnabled = false;
 
-// UI 提示层
 let permissionOverlay = null;
 
 function setup() {
@@ -32,20 +22,16 @@ function setup() {
   gyroSupported = !!window.DeviceOrientationEvent;
 
   if (!gyroSupported) {
-    // 没陀螺仪就靠鼠标拖动（你后面 mouseDragged 有写）
     console.log("❌ 设备不支持陀螺仪，自动切换鼠标控制");
     return;
   }
 
-  // iOS (Safari) 需要 requestPermission，且必须在用户手势里调用
   needsIOSPermission =
     typeof DeviceOrientationEvent.requestPermission === "function";
 
   if (needsIOSPermission) {
-    // 先显示“点一下开启”的提示层
     showPermissionOverlay();
   } else {
-    // Android / 其他：直接开启监听
     enableGyro();
   }
 }
@@ -55,7 +41,6 @@ function draw() {
 
   drawFoodCounter();
 
-  // 绘制所有玩家外星生物
   for (let id in players) {
     let p = players[id];
     let hx = (p?.x ?? width / 2);
@@ -65,7 +50,6 @@ function draw() {
 
     drawAlien(hx, hy, hc, hs);
 
-    // 标记自己（红点）
     if (id === myId) {
       fill(0, 0, 100);
       noStroke();
@@ -73,7 +57,6 @@ function draw() {
     }
   }
 
-  // 更新并绘制食物
   for (let i = foods.length - 1; i >= 0; i--) {
     let f = foods[i];
 
@@ -90,7 +73,6 @@ function draw() {
     }
     pop();
 
-    // 吃到食物
     if (myId && players[myId]) {
       let me = players[myId];
       let d = dist(me.x, me.y, f.pos.x, f.pos.y);
@@ -101,7 +83,6 @@ function draw() {
       }
     }
 
-    // 超出屏幕移除
     if (
       f.pos.x < -20 || f.pos.x > width + 20 ||
       f.pos.y < -20 || f.pos.y > height + 20
@@ -110,7 +91,6 @@ function draw() {
     }
   }
 
-  // 自动生成食物
   if (foods.length < maxFoods && random() < 0.02) {
     foods.push({
       pos: createVector(random(width), random(height)),
@@ -122,7 +102,6 @@ function draw() {
     });
   }
 
-  // ===== 用陀螺仪控制自己的位置 + 节流发送 =====
   if (gyroEnabled && myId && players[myId]) {
     let pos = gyroToPos();
     players[myId].x = pos.x;
@@ -130,13 +109,11 @@ function draw() {
 
     let now = millis();
     if (now - lastSendTime > SEND_INTERVAL) {
-      // 注意：这里调用的是 client.js 里的 sendPosition（emit 'update'）
       sendPosition(pos.x, pos.y);
       lastSendTime = now;
     }
   }
 
-  // 如果还没开权限，屏幕上给一点提示（不挡画面）
   if (needsIOSPermission && !gyroEnabled) {
     push();
     fill(0, 0, 100, 80);
@@ -148,8 +125,7 @@ function draw() {
   }
 }
 
-// ====================== iOS 权限逻辑 ======================
-// p5 的 touchStarted 是“用户手势”，iOS 允许在这里 requestPermission
+
 function touchStarted() {
   if (!gyroSupported) return;
 
@@ -169,7 +145,6 @@ function touchStarted() {
       });
   }
 
-  // 防止 iOS 触摸触发页面滚动（你 HTML 里也写了 touch-action:none）
   return false;
 }
 
@@ -179,7 +154,6 @@ function enableGyro() {
 }
 
 function handleGyro(e) {
-  // 平滑滤波 + 默认值兜底
   let b = (typeof e.beta === "number") ? e.beta : 0;
   let g = (typeof e.gamma === "number") ? e.gamma : 0;
 
@@ -196,7 +170,6 @@ function gyroToPos() {
   return createVector(constrain(x, 0, width), constrain(y, 0, height));
 }
 
-// ====================== UI 覆盖层 ======================
 function showPermissionOverlay() {
   permissionOverlay = createDiv("点一下屏幕开启陀螺仪<br>(iPhone 需要授权)");
   permissionOverlay.style("position", "fixed");
@@ -215,7 +188,6 @@ function showPermissionOverlay() {
   permissionOverlay.style("z-index", "9999");
   permissionOverlay.style("cursor", "pointer");
 
-  // ✅ 关键：点遮罩本身就触发授权（因为遮罩挡住了canvas）
   const request = () => {
     if (
       typeof DeviceOrientationEvent !== "undefined" &&
@@ -233,13 +205,11 @@ function showPermissionOverlay() {
         })
         .catch((err) => console.log("❌ requestPermission 失败：", err));
     } else {
-      // Android / 非 iOS
       hidePermissionOverlay();
       enableGyro();
     }
   };
 
-  // iOS 认 “触摸/点击” 都算用户手势
   permissionOverlay.elt.addEventListener("click", request, { once: true });
   permissionOverlay.elt.addEventListener("touchend", request, { once: true });
 }
@@ -252,7 +222,6 @@ function hidePermissionOverlay() {
   }
 }
 
-// ====================== 原有函数：计数/外星生物 ======================
 function drawFoodCounter() {
   fill(0, 0, 100);
   textSize(18);
@@ -295,7 +264,6 @@ function drawAlien(centerX, centerY, hue, size) {
   }
 }
 
-// 备用：鼠标拖动控制（没陀螺仪时）
 function mouseDragged() {
   if (myId && players[myId] && !gyroSupported) {
     players[myId].x = mouseX;
